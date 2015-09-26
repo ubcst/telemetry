@@ -23,21 +23,19 @@
  *			when the XBee is fully tested.
  */
 
-#include <iostream>		/* Standard IO library */
-#include <string>		/* Strings library */
-#include <Windows.h>	/* Windows API library */
-
+#include <iostream>		// Standard IO library
+#include <string>		// Strings library
+#include <Windows.h>	// Windows API library
+#include <tchar.h>		// For handling text encodings
+#include "Serial.h"		// Serial library
 
 using namespace std;
 
-/* Global Variables */
-#define _XBEEBAUDRATE	9600	/* XBee port baud rate (9600 bps) */
-#define _XBEEBYTESIZE	8		/* XBee port packet size */
-#define _XBEEPARITY		1		/* XBee port parity bit on or off */
-#define _XBEESTOPBIT	1		/* XBee port stop bit 1 or 2 bits */
+/* Macros */
+#define _XBEEPORT "COM3"
 
-LPCWSTR _XBeePort = L"COM4";	/* Address of XBee Serial Port for CreateFile() */
-								/* L".." string prefix specifies a wide string literal */
+/* Global Variables */
+CSerial xbeeSerial;	/* New XBee serial class */ 
 
 /* Function Declarations */
 void startup();
@@ -45,31 +43,27 @@ void init_Xbee_Serial();
 int promptMenu();
 void configureXbee();
 void receiveData();
-void sendData();
+void sendData(LPCSTR );
 
 int main(void)
 {
-
-	/* Initialize the program */
+	// Local Variables
+	string message("hello!");
+	LPCSTR msgString = message.c_str();
+	// Initialize the program 
 	startup();
 
-	if(promptMenu())	/* Check if user wants to SEND (1) or EXIT (0) */
+	if(promptMenu())	// Check if user wants to SEND (1) or EXIT (0)
 	{
-		/* Send and receive data code goes here */
-
-		/* FOR TEST ONLY */
-		cout << "Sending data...\n";
-		for(int i = 0; i < 50; i++)
-		{
-			cout << i;
-			cout << "\n";
-		}
-		/* FOR TEST ONLY */
+		// Send and receive data code goes here
+		cout << message << "\n";
+		sendData(msgString);
 	}
 
 
-	/* Exit the program */
-	cin.get();
+	// Exit the program 
+	xbeeSerial.Close(); // Close the serial port before exiting
+	cin.get(); // Require a key press before quitting
 	return 0;
 }
 
@@ -114,53 +108,19 @@ void startup(void)
  */
 void init_Xbee_Serial(void)
 {
-	/* Initialize the DCB (Device Control Block) struct */
-	/* Needed for setting XBee port settings */
-	DCB xbeeDCB = {0};
-	
-	/* Create a COM port file */
-	HANDLE xbeeHandle;	/* Create a handle for the XBee COM port */
+	// Initialize the XBee serial port
+	xbeeSerial.Open(_T(_XBEEPORT));
 
-	xbeeHandle = CreateFile(_XBeePort,	/* XBee port name, set above */
-							GENERIC_READ | GENERIC_WRITE,	/* Set permissions */
-							0,		/* Share mode (0 = do not share with other processes) */
-							0,		/* Security (0 = None ) */
-							OPEN_EXISTING,	/* Open file only if device exists */
-							FILE_FLAG_OVERLAPPED,	/* Asynchronous IO */
-							NULL		/* No template file */
-							);
+	// Setup the serial port to the defined values
+	xbeeSerial.Setup(
+		CSerial::EBaud9600, // Set to 9600 bps
+		CSerial::EData8, // Set to 8 data bits
+		CSerial::EParNone, // No Parity bit
+		CSerial::EStop1 // No Stop bit
+		);
 
-	/* Check if COM Port is opened successfully */
-	if(xbeeHandle == INVALID_HANDLE_VALUE)
-	{
-		/* Error opening the port */
-		cout << "\nError opening the COM port.\n";
-		while(1);
-	}
-
-	/* Set serial port settings */
-	/* Check current DCB for the XBee port */
-	if(!GetCommState(xbeeHandle, &xbeeDCB))
-	{
-		/* Error getting port settings */
-		cout << "\nError getting CommState.";
-		while(1);
-	}
-
-	/* Set the port settings into the DCB */
-	xbeeDCB.BaudRate = _XBEEBAUDRATE;
-	xbeeDCB.ByteSize = _XBEEBYTESIZE;
-	xbeeDCB.Parity = _XBEEPARITY;
-	xbeeDCB.StopBits = _XBEESTOPBIT;
-
-	/* Check if DCB is set properly */
-	if(!SetCommState(xbeeHandle, &xbeeDCB))
-	{
-		/* Error setting DCB */
-		cout << "\nError setting DCB.";
-		while(1);
-	}
-
+	// Setup serial handshaking mode
+	xbeeSerial.SetupHandshaking(CSerial::EHandshakeHardware);
 }
 
 /*
@@ -228,7 +188,24 @@ void configureXbee(void)
  */
 void receiveData(void)
 {
-	/* TODO: RECEIVE CODE GOES HERE */
+	// Local Variables
+	DWORD numBytesToRead = 0; // Stores number of bytes to read
+	BYTE dataBuffer[100]; // Data buffer for incoming bytes
+
+	// Setup timeout for serial reads
+	// Setting is to read as much as possible without blocking the Read()
+	xbeeSerial.SetupReadTimeouts(CSerial::EReadTimeoutNonblocking);
+
+	do
+	{
+		xbeeSerial.Read(dataBuffer, sizeof(dataBuffer), &numBytesToRead);
+		if(numBytesToRead > 0)
+		{
+			cout << dataBuffer << "\n";
+		}
+	}while(numBytesToRead == sizeof(dataBuffer));
+
+
 }
 
 /*
@@ -242,7 +219,8 @@ void receiveData(void)
  *			XBee.
  *			This function will write the data to the XBee serial port.
  */
-void sendData(void)
+void sendData(LPCSTR message)
 {
-	/* TODO: Send code goes here */
+	xbeeSerial.Write(message);
+	cout << "Data sent.\n";
 }
