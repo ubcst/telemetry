@@ -1,0 +1,5 @@
+# Ignore the following executables
+gps
+
+# Ignore swp files
+*swp
