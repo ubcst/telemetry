@@ -1,260 +1,173 @@
-////////////////////////////////////////////////////
-//
-// XBee Communications - Linux
-//
-// Author: 	Jan Louis Evangelista
-//
-// Purpose: This program is used to configure the
-//			ID's of the XBee module
-//
-////////////////////////////////////////////////////
+/*
+ * XBee Comms Program
+ *
+ * Author: Jan Louis Evangelista
+ *
+ * This program uses the Master XBee to send and receive data
+ * to the Slave XBee connected to an Arduino.
+ * The program uses the LibXBee library to do all XBee functions.
+ *
+ */
 
-// Header files
-#include <stdio.h>		// Standard IO Definitions
-#include <stdlib.h>		// Standard Library Definitions
-#include <string.h>		// String Functions Definitions
-#include <unistd.h>		// UNIX Standard IO Definitons
-#include <fcntl.h>		// File Control Definitions
-#include <errno.h>		// Error Numbers Definitions
-#include <termios.h>	// Terminal Definitions
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-// Function Prototypes
-void init_Xbee_Serial(void);
-void init_GPS_Serial(void);
-int config_Xbee_Commands(void);
-void write_Xbee(char*);
+#include "xbee.h" // LibXBee Library
 
+#define XBEEMODE "xbee1" // xbee1 = short range, xbee3 = long range
+#define XBEEPORT "/dev/ttyUSB0" // Change according to order plugged in
+#define XBEEBAUD 9600 // As configured in XCTU
 
-// Macros
-#define TRUE	1
-#define FALSE	0
+struct xbee *xbee;
+struct xbee_con *con;
+unsigned char txRet;
+xbee_err ret;
+struct xbee_pkt *pkt;
+struct xbee_conAddress address;
 
-#define	_XBEEPORTPATH	"/dev/ttyUSB0" 	// USB port on heatsink side
-#define _GPSPORTPATH	"/dev/ttyUSB1"	// USB port on CD side
-#define _POSIX_SOURCE	1
-#define _BAUDRATE		B9600			// Baud rate set to 9600 bps
+ 
+FILE *logFile;
 
-// Global Variables
-int Xbee_Serial_File;	// XBee Serial File
-int GPS_Serial_File;	// GPS Serial File
+int xbeeSetup(void);
 
-int num_Bytes_Sent;		// number of bytes sent on XBee serial port
-int num_Bytes_Rcvd;		// number of bytes received on port
-
-char output[255];		// string output of XBee
-char input[255];		// string input for XBee
-
-struct termios XBEE_OPTIONS;	// Serial port configuration struct
-
-// Start Main()
-int main()
+int main( int argc, char **argv )
 {
-	// Initialize XBee Serial Port
-	init_Xbee_Serial();
-	
-	// Initialize GPS Serial Port
-	// DO NOT USE YET!!!
-	// init_GPS_Serial();
-	
-	// Configure XBee AT Commands
-	// DO NOT USE YET!!!
-	// config_Xbee_Commands();
+	//void *d;
 
-	while(strcmp(output,"exit") != 0)
+	int i; // Loop counter
+	
+	char data[256]; // Data string array 
+	
+	// Address of receiver XBee attached to Arduino
+	// Configured using XCTU, change when conflicts detected
+	// Destination Address HI: 0x00
+	// Destination Address LO: 0x00
+	memset(&address, 0, sizeof(address));
+	address.addr16_enabled = 1;
+	address.addr16[0] = 0x00;
+	address.addr16[1] = 0x00;
+
+	// Setup the XBee Module
+	xbeeSetup();
+
+	// Create a new 2-way remote communication with 16-bit addressing
+	// Return error code if a connection cannot be made
+	if((ret = xbee_conNew(xbee, &con, "16-bit Data", &address)) != XBEE_ENONE)
 	{
-		// Prompt user for string to send to Arduino
-		printf("Enter a string to send: ");
-		scanf("%s", output);
-		
-		// Write data into the port
-		write_Xbee(output);
+		printf("Con New Ret: %d, (%s)\n", ret, xbee_errorToStr(ret));
+		return ret;
 	}
 	
-	// Close the ports
-	close(Xbee_Serial_File);
-	close(GPS_Serial_File);
+	printf("ConNew Ret: %d (%s)\n", ret, xbee_errorToStr(ret));
+	
+	printf("Start transmitting TX data...\n");
+	printf("-----------------------------\n");
+	
+	// Transmission Loop
+	// The transmit loop takes an input string {data} and sends it to the
+	// XBee for transmission using xbee_conTx(). If transmission fails,
+	// an error code is returned.
+	// Transmission loop can be exited by entering "exit" into {data}
+	// The {data} can be modified to be anything, be it GPS data or telemetry
+	// data, as long as it is string-formatted. User input is optional.	
+	do
+	{
+		// Read a string from the console
+		printf("\nEnter string to send: ");
+		scanf("%s", data);
+		printf("\nData entered: %s", data);
+		
+		// Check for "exit" keyword
+		if(strcmp(data, "exit") != 0)
+		{
+			// Transmit the data, check for error code returned
+			if((ret = xbee_conTx(con, &txRet, data)) != XBEE_ENONE)
+			{
+				printf("ConTX Returned: %d, (%s)\n", ret, xbee_errorToStr(ret));
+				return ret;
+			}
+		}	
+		
+	}while(strcmp(data, "exit") != 0); // exit transmit loop on keyword "exit"
+
+	// Reception Loop
+	// TODO: Cleanup the code
+	//
+	// If the return code =/= 0, then an error occured
+	if(ret)    
+	{
+		printf("Error - TXRet: %d (%s)\n", txRet, xbee_errorToStr(txRet));
+	}
+	else
+	{
+		if((ret = xbee_conRx(con, &pkt, NULL)) != XBEE_ENONE)
+		{
+			printf("Error calling xbee_conRx(): %s\n", xbee_errorToStr(ret));
+		}
+		else
+		{
+			printf("Response is %d bytes long.\n", pkt -> dataLen);
+			for(i = 0; i < pkt -> dataLen; i++)
+			{
+				unsigned char c = (((pkt -> data[i] >= ' ') && (pkt->data[i] <= '~')) 
+					? pkt->data[i]:'.');
+
+				printf("%3d: 0x%02X - %c\n", i, pkt->data[i], c);
+
+			}
+		}
+	}
+
+
+	// Close the XBee connection
+	if((ret = xbee_conEnd(con)) != XBEE_ENONE)
+	{
+		xbee_log(xbee, -1, "xbee_conEnd() returned: %d", ret);
+		return ret;
+	}
+	
+	// Shutdown the XBee library
+	xbee_shutdown(xbee);
 	
 	// Exit the program
 	return 0;
 }
 
-////////////////////////////////////////////////////
-//
-// init_Xbee_Serial()
-//
-// Inputs:	None
-//
-// Outputs:	None
-//
-// Purpose:	This function initializes the XBee serial
-//			port to the assigned value
-//
-////////////////////////////////////////////////////
-void init_Xbee_Serial(void)
+int xbeeSetup(void)
 {
-	// Initialize Xbee Serial File as a write-only, non-controlling
-	// terminal with no delay
-	Xbee_Serial_File = open( _XBEEPORTPATH,	// XBee port path 
-							 O_RDWR | 		// Read-Write flag
-							 O_NOCTTY | 	// Non-control flag
-							 O_NDELAY );	// No delay flag
-	
-	// Port open error handler 
-	if( Xbee_Serial_File < 0)
+	// Setup the XBee at specified serial port, specified baud rate
+	// Return errpr code if the XBee doesn't initialize properly
+	if((ret = xbee_setup(&xbee, XBEEMODE, XBEEPORT, XBEEBAUD)) != XBEE_ENONE)
 	{
-		printf("Cannot open XBee serial port! Errno: %d\n", errno);
-
-		////////////////////////////////////////////
-		// FIX ERROR HANDLER
-		////////////////////////////////////////////
-		while(1);
+		printf("Mode Setup Ret: %d, (%s)\n", ret, xbee_errorToStr(ret));
+		return ret;
 	}
 	
-	// Configure XBee serial port
-	XBEE_OPTIONS.c_cflag = 	_BAUDRATE |	// Set baud rate
-							CRTSCTS |	// Enable hardware flow control
-							CS8 | 		// Set 8 data bits, no parity, 1 stop bit
-							CLOCAL | 	// Local owner
-							CREAD;		// Enable receiver
-	XBEE_OPTIONS.c_iflag = IGNPAR | ICRNL;
-	XBEE_OPTIONS.c_oflag = 0;
-	XBEE_OPTIONS.c_lflag = ICANON;
-	XBEE_OPTIONS.c_cc[VMIN]=1;
-	XBEE_OPTIONS.c_cc[VTIME]=0;
-	tcsetattr(Xbee_Serial_File,TCSANOW,&XBEE_OPTIONS); 
-}
-
-////////////////////////////////////////////////////
-//
-// init_GPS_Serial()
-//
-// Inputs:	None
-//
-// Outputs:	None
-//
-// Purpose:	This function initializes the GPS serial
-//			port to the assigned value
-//
-////////////////////////////////////////////////////
-void init_GPS_Serial(void)
-{
-	// Initialize GPS Serial File as a read-only, non-controlling
-	// terminal with no delay
-	GPS_Serial_File = open( _GPSPORTPATH,	// GPS port path 
-							O_RDONLY | 	// Read only flag
-							O_NOCTTY | 	// Non-control flag
-							O_NDELAY );	// No delay flag
+	printf("Setup returned: %d (%s)\n", ret, xbee_errorToStr(ret));
 	
-	// Port open error handler 
-	if( GPS_Serial_File < 0)
+	if ((logFile = fopen("libxbee.log", "w")) == NULL) 
 	{
-		printf("Cannot open GPS serial port! Errno: %d\n", errno);
-		
-		////////////////////////////////////////////
-		// FIX ERROR HANDLER
-		////////////////////////////////////////////
-		while(1);
+		printf("Log file is NULL\n");
 	}
-}
-
-////////////////////////////////////////////////////
-//
-// config_Xbee_Commands()
-//
-// Inputs:	None
-//
-// Outputs:	0 - configuration of module failed
-//			1 - configuration of module succeeded 
-//
-// Purpose:	This function uses an FSM to configure
-//			the XBee using terminal commands
-//			Configure to the following:
-//			-9600 bps, 8 bits, 1 stop bit, no parity
-//			- Enable FIFO
-//			- Set as End Device (CE = 0)
-//			- Disable End Device Assoc. (A1 = 0)
-//			- DH = 0, DL = 0xBB, MY = 0xAA
-//
-////////////////////////////////////////////////////
-int config_Xbee_Commands(void)
-{
-	int 	fsm_state = 0;	// state variable for current state
 	
-	char 	cmd_On[] = {'+','+','+'};
-	
-	// TODO: Complete the configuration state machine
-	// Not yet required unless interference with other XBees an issue
-	while(1)
+	if ((ret = xbee_logTargetSet(xbee, logFile)) != XBEE_ENONE)
 	{
-		switch(fsm_state)
-		{
-			case 0:
-				sleep(2);	// Guard Time
-				// send the "+++" command to enter config mode
-				num_Bytes_Sent = write(	Xbee_Serial_File, 
-										cmd_On, 
-										(sizeof cmd_On));
-				
-				printf("Sent: %s", cmd_On);
-				sleep(2);	// Guard Time
-
-				num_Bytes_Rcvd = read(	Xbee_Serial_File,
-										input, sizeof input);
-				printf("\nReceived: %s\n", input);
-				
-				if(strcmp(input,"OK\r") == 0)
-				{
-					printf("\n+++ accepted!\n");
-					fsm_state = 1;
-				}
-				else
-				{
-					printf("\n+++ rejected!\n");
-					fsm_state = 6;
-				}
-				break;
-			case 1:
-				break;
-			case 2:
-				break;
-			case 3:
-				break;
-			case 4:
-				break;
-			case 5:			// Configure is successful
-				return 1;
-			case 6:			// Configuration failed
-				return 0;
-			default: 		// Configuration failed
-				return 0;
-		}
-	}
-}
-
-////////////////////////////////////////////////////
-//
-// write_Xbee()
-//
-// Inputs:	message
-//
-// Outputs:	None
-//
-// Purpose:	This function writes the char message
-//			into the serial port
-//
-////////////////////////////////////////////////////
-void write_Xbee(char msg[])
-{
-	// Write the string onto the serial port
-	num_Bytes_Sent = write(Xbee_Serial_File, msg, (sizeof msg) - 1);
-
-	printf("\nXBee sent: ");
-	printf("%s", msg);
-	printf(" and sent %d bytes\n", num_Bytes_Sent);
+		printf("XBee Log File Target Set Ret: %d (%s)\n", ret, xbee_errorToStr(ret));
+	} 
 	
-	// Check if the write failed
-	if(num_Bytes_Sent < 0)
+	if ((ret = xbee_logLevelSet(xbee, 100)) != XBEE_ENONE)
 	{
-		printf("Error sending data\n");
-	}	
+		printf("XBee Log Level Set Ret: %d (%s)\n", ret, xbee_errorToStr(ret));
+	} 	
+	
+	if ((ret = xbee_logTxSet(xbee, 100)) != XBEE_ENONE)
+	{
+		printf("XBee Log TX Set Ret: %d (%s)\n", ret, xbee_errorToStr(ret));
+	} 
+	
+	printf("Log File Setup Complete\n");
+	printf("Setup Complete!\n");
+	
+	return 1;
 }
