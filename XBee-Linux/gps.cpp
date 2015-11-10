@@ -34,6 +34,11 @@ char buf = '\0';
 char response[1024];
 vector<string> nmeaLine;
 
+void readNmeaLine( void );
+void splitString( void );
+bool checkNmeaLine( void );
+void printGpsData( void );
+
 /**
  * Code to split a string. Taken from:
  * http://stackoverflow.com/questions/236129/split-a-string-in-c
@@ -118,28 +123,43 @@ void gpsInit( void ) {
 void gpsConfigure( void ) {
    const char *str;
 
-   // TODO: Add this in and wait for us to get a fix.
    // Cold start can take up to 15 min...
-   // Not sure if we need to do a full cold start or not. Commenting
-   // out for now.
-   /*// Perform full cold start
-   str = "$PMTK104*37\r\n";
-   cout << "Write Val: " << write( USB, str, strlen( str ) ) << endl;*/
+   // Perform cold start. Can't seem to get working as the GPS doesn't
+   // want to accept PMTK103 messages.
+   // Commenting out for now because it seems like having this in prevents
+   // the other PMTK messages from working (possibly a race condition where
+   // one write overwrites the other).
+   /*str = "$PMTK103*30\r\n";
+   cout << "PMTK String: " << str;
+   if ( strlen( str ) != write( USB, str, strlen( str ) ) ) {
+      cout << "GPS cold start failed." << endl;
+   }*/
 
-   // Only receive GPSRMC messages
-   str = "$PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29\r\n";
+   /*while( true ) {
+      readNmeaLine();
+      splitString();
+      if( nmeaLine[0] == "$PMTK001" ) {
+         cout << response << endl;
+         break;
+      }
+   }*/
+
+   // Only receive GPSRMC messages and GPS Fix data
+   //str = "$PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29\r\n";
+   str = "$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28\r\n";
    cout << "PMTK String: " << str;
    if ( strlen( str ) != write( USB, str, strlen( str ) ) ) {
       cout << "Read only GPSRMC messages failed." << endl;
    }
 
    // Turn off the EASY function because it only works for 1Hz.
-   // Not 100% sure if this is necessary. Leaving in for now.
-   str = "$PMTK869,1,0*34\r\n";
+   // Commenting out because our GPS doesn't seem to support this
+   // command.
+   /*str = "$PMTK869,1,0*34\r\n";
    cout << "PMTK String: " << str;
    if ( strlen( str ) != write( USB, str, strlen( str ) ) ) {
       cout << "Turn off EASY function failed." << endl;
-   }
+   }*/
 
    // Change update rate to 5Hz.
    str = "$PMTK220,200*2C\r\n";
