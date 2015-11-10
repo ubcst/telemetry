@@ -125,10 +125,7 @@ void gpsConfigure( void ) {
 
    // Cold start can take up to 15 min...
    // Perform cold start. Can't seem to get working as the GPS doesn't
-   // want to accept PMTK103 messages.
-   // Commenting out for now because it seems like having this in prevents
-   // the other PMTK messages from working (possibly a race condition where
-   // one write overwrites the other).
+   // want to accept PMTK103 messages. Commenting out for now.
    /*str = "$PMTK103*30\r\n";
    cout << "PMTK String: " << str;
    if ( strlen( str ) != write( USB, str, strlen( str ) ) ) {
