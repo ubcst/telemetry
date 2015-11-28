@@ -15,7 +15,7 @@
 
 #include "xbee.h" // LibXBee Library
 
-#define XBEEMODE "xbee1" // xbee1 = short range, xbee3 = long range
+#define XBEEMODE "xbee3" // xbee1 = short range, xbee3 = long range
 #define XBEEPORT "/dev/ttyUSB0" // Change according to order plugged in
 #define XBEEBAUD 9600 // As configured in XCTU
 
@@ -30,15 +30,22 @@ struct xbee_conAddress address;
 FILE *logFile;
 
 int xbeeSetup(void);
+void xbeeCallback(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, void **data)
+{
+	if((*pkt) -> dataLen <= 0)
+		return;
+	
+	printf("RX: %s\n", (*pkt) -> data);
+		
+}
 
 int main( int argc, char **argv )
 {
 	//void *d;
-
-	int i; // Loop counter
 	
 	char data[256]; // Data string array 
 	
+	/* xbee1 destination address 
 	// Address of receiver XBee attached to Arduino
 	// Configured using XCTU, change when conflicts detected
 	// Destination Address HI: 0x00
@@ -47,13 +54,40 @@ int main( int argc, char **argv )
 	address.addr16_enabled = 1;
 	address.addr16[0] = 0x00;
 	address.addr16[1] = 0x00;
+	*/
+	
+	/* xbee3 destination address */
+	// Address of receiver XBee attached to Arduino
+	// Configured using XCTU, change when conflicts detected
+	// Destination Address HI: 0xff
+	// Destination Address LO: 0xff
+	memset(&address, 0, sizeof(address));
+	address.addr64_enabled = 1;
+	address.addr64[0] = 0x00;
+	address.addr64[1] = 0x00;
+	address.addr64[2] = 0x00;
+	address.addr64[3] = 0x00;
+	address.addr64[4] = 0x00;
+	address.addr64[5] = 0x00;
+	address.addr64[6] = 0xff;
+	address.addr64[7] = 0xff;
 
+	memset( data, '\0', sizeof(data));
+	
 	// Setup the XBee Module
 	xbeeSetup();
-
+	
+	/* xbee1 new data connection 
 	// Create a new 2-way remote communication with 16-bit addressing
 	// Return error code if a connection cannot be made
 	if((ret = xbee_conNew(xbee, &con, "16-bit Data", &address)) != XBEE_ENONE)
+	{
+		printf("Con New Ret: %d, (%s)\n", ret, xbee_errorToStr(ret));
+		return ret;
+	} */
+	
+	/* xbee3 new data connection */
+	if((ret = xbee_conNew(xbee, &con, "Data", &address)) != XBEE_ENONE)
 	{
 		printf("Con New Ret: %d, (%s)\n", ret, xbee_errorToStr(ret));
 		return ret;
@@ -61,11 +95,19 @@ int main( int argc, char **argv )
 	
 	printf("ConNew Ret: %d (%s)\n", ret, xbee_errorToStr(ret));
 	
-	printf("Start transmitting TX data...\n");
+	// Setup a callback for the receive function
+	// Allows program to continue working when no packets are received
+	if ((ret = xbee_conCallbackSet(con, xbeeCallback, NULL)) != XBEE_ENONE) 
+	{
+		printf("Callback Set Ret: %d, (%s)\n", ret, xbee_errorToStr(ret));
+		return ret;
+	}
+	
+	printf("Start XBee Communications...\n");
 	printf("-----------------------------\n");
 	
-	// Transmission Loop
-	// The transmit loop takes an input string {data} and sends it to the
+	// Communication Loop
+	// The comms loop takes an input string {data} and sends it to the
 	// XBee for transmission using xbee_conTx(). If transmission fails,
 	// an error code is returned.
 	// Transmission loop can be exited by entering "exit" into {data}
@@ -74,9 +116,7 @@ int main( int argc, char **argv )
 	do
 	{
 		// Read a string from the console
-		printf("\nEnter string to send: ");
-		scanf("%s", data);
-		printf("\nData entered: %s", data);
+		fgets(data, sizeof(data), stdin);
 		
 		// Check for "exit" keyword
 		if(strcmp(data, "exit") != 0)
@@ -84,41 +124,13 @@ int main( int argc, char **argv )
 			// Transmit the data, check for error code returned
 			if((ret = xbee_conTx(con, &txRet, data)) != XBEE_ENONE)
 			{
-				printf("ConTX Returned: %d, (%s)\n", ret, xbee_errorToStr(ret));
-				return ret;
+				printf("ConTX Error: %d, (%s)\n", ret, xbee_errorToStr(ret));
+				printf("TXRet Error: %d (%s)\n", txRet, xbee_errorToStr(txRet));
 			}
+			printf("TX: %s\n", data);
 		}	
 		
 	}while(strcmp(data, "exit") != 0); // exit transmit loop on keyword "exit"
-
-	// Reception Loop
-	// TODO: Cleanup the code
-	//
-	// If the return code =/= 0, then an error occured
-	if(ret)    
-	{
-		printf("Error - TXRet: %d (%s)\n", txRet, xbee_errorToStr(txRet));
-	}
-	else
-	{
-		if((ret = xbee_conRx(con, &pkt, NULL)) != XBEE_ENONE)
-		{
-			printf("Error calling xbee_conRx(): %s\n", xbee_errorToStr(ret));
-		}
-		else
-		{
-			printf("Response is %d bytes long.\n", pkt -> dataLen);
-			for(i = 0; i < pkt -> dataLen; i++)
-			{
-				unsigned char c = (((pkt -> data[i] >= ' ') && (pkt->data[i] <= '~')) 
-					? pkt->data[i]:'.');
-
-				printf("%3d: 0x%02X - %c\n", i, pkt->data[i], c);
-
-			}
-		}
-	}
-
 
 	// Close the XBee connection
 	if((ret = xbee_conEnd(con)) != XBEE_ENONE)
@@ -171,3 +183,5 @@ int xbeeSetup(void)
 	
 	return 1;
 }
+
+
